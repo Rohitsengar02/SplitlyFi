@@ -1,81 +1,272 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read and write their own user document
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
     
-    // Rooms - only members can read/write
+    // ===================================================
+    // USERS COLLECTION
+    // ===================================================
+    match /users/{userId} {
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isOwner() {
+        return isSignedIn() && request.auth.uid == userId;
+      }
+
+      function allowedUserKeys() {
+        return ['uid', 'email', 'displayName', 'photoURL', 'bio', 'createdAt', 'updatedAt'];
+      }
+
+      function hasOnlyAllowedKeys() {
+        return request.resource.data.keys().hasOnly(allowedUserKeys());
+      }
+
+      function isValidStringsForCreate() {
+        return (request.resource.data.uid is string) &&
+               (request.resource.data.email is string) &&
+               (!('displayName' in request.resource.data) || request.resource.data.displayName is string) &&
+               (!('photoURL' in request.resource.data) || request.resource.data.photoURL is string) &&
+               (!('bio' in request.resource.data) || request.resource.data.bio is string);
+      }
+
+      function isValidStringsForUpdate() {
+        return (!('uid' in request.resource.data) || request.resource.data.uid is string) &&
+               (!('email' in request.resource.data) || request.resource.data.email is string) &&
+               (!('displayName' in request.resource.data) || request.resource.data.displayName is string) &&
+               (!('photoURL' in request.resource.data) || request.resource.data.photoURL is string) &&
+               (!('bio' in request.resource.data) || request.resource.data.bio is string);
+      }
+
+      function isValidCreate() {
+        return isOwner() &&
+               hasOnlyAllowedKeys() &&
+               isValidStringsForCreate() &&
+               (request.resource.data.uid == userId);
+      }
+
+      function isValidUpdate() {
+        return isOwner() &&
+               hasOnlyAllowedKeys() &&
+               isValidStringsForUpdate() &&
+               (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid);
+      }
+
+      allow get, list: if isOwner();
+      allow create: if isValidCreate();
+      allow update: if isValidUpdate();
+      allow delete: if isOwner();
+    }
+
+    // ===================================================
+    // ROOMS COLLECTION
+    // ===================================================
     match /rooms/{roomId} {
-      allow read, write: if request.auth != null && 
-        request.auth.uid in resource.data.members.keys();
-      allow create: if request.auth != null && 
-        request.auth.uid == request.resource.data.createdBy;
-      
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isCreator() {
+        return isSignedIn() && request.auth.uid == resource.data.createdBy;
+      }
+
+      function isMember() {
+        return isSignedIn() &&
+               (request.auth.uid in resource.data.members);
+      }
+
+      function allowedRoomKeys() {
+        return [
+          'id', 'title', 'description', 'imageUrl', 'hasLimit',
+          'userLimit', 'currency', 'category', 'joinCode', 'members',
+          'membersCount', 'totalExpenses', 'createdBy', 'createdAt', 'updatedAt'
+        ];
+      }
+
+      function hasOnlyAllowedRoomKeys() {
+        return request.resource.data.keys().hasOnly(allowedRoomKeys());
+      }
+
+      function isValidRoomStrings() {
+        return (!('title' in request.resource.data) || request.resource.data.title is string) &&
+               (!('description' in request.resource.data) || request.resource.data.description is string) &&
+               (!('imageUrl' in request.resource.data) || request.resource.data.imageUrl is string) &&
+               (!('currency' in request.resource.data) || request.resource.data.currency is string) &&
+               (!('category' in request.resource.data) || request.resource.data.category is string) &&
+               (!('joinCode' in request.resource.data) || request.resource.data.joinCode is string);
+      }
+
+      function isValidRoomNumbers() {
+        return (!('membersCount' in request.resource.data) || request.resource.data.membersCount is number) &&
+               (!('totalExpenses' in request.resource.data) || request.resource.data.totalExpenses is number);
+      }
+
+      function isValidRoomBools() {
+        return (!('hasLimit' in request.resource.data) || request.resource.data.hasLimit is bool);
+      }
+
+      function isValidUserLimit() {
+        return (!('userLimit' in request.resource.data) || request.resource.data.userLimit is number) &&
+               (!('hasLimit' in request.resource.data) || request.resource.data.hasLimit == false || request.resource.data.userLimit > 0);
+      }
+
+      function isValidMembersMap() {
+        return !('members' in request.resource.data) ||
+               (request.resource.data.members[request.auth.uid] == true);
+      }
+
+      function isValidCreate() {
+        return isSignedIn() &&
+               hasOnlyAllowedRoomKeys() &&
+               isValidRoomStrings() &&
+               isValidRoomNumbers() &&
+               isValidRoomBools() &&
+               isValidUserLimit() &&
+               isValidMembersMap() &&
+               (request.auth.uid == request.resource.data.createdBy) &&
+               (request.resource.data.joinCode == roomId);
+      }
+
+      function isValidUpdate() {
+        return isSignedIn() &&
+               (isMember() || isCreator() || isAddingSelf());
+      }
+
+      function isAddingSelf() {
+        return isSignedIn() &&
+               ('members' in request.resource.data) &&
+               (request.auth.uid in request.resource.data.members) &&
+               (!(request.auth.uid in resource.data.members));
+      }
+
+      allow read: if isMember() || isCreator();
+      allow write: if isMember() || isCreator() || isAddingSelf();
+      allow create: if isValidCreate();
+      allow update: if isValidUpdate();
+      allow delete: if isCreator();
+
       // Room expenses - only room members can access
       match /expenses/{expenseId} {
-        allow read, write: if request.auth != null && 
+        allow read, write: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
-        allow create: if request.auth != null && 
+        allow create: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
       }
-      
+
       // Room goals - only room members can access
       match /goals/{goalId} {
-        allow read, write: if request.auth != null && 
+        allow read, write: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
-        allow create: if request.auth != null && 
-          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
-      }
-      
-      // Room tasks - only room members can access
-      match /tasks/{taskId} {
-        allow read, write: if request.auth != null && 
-          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
-        allow create: if request.auth != null && 
+        allow create: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
       }
-      
+
       // Room notes - only room members can access
       match /notes/{noteId} {
-        allow read, write: if request.auth != null && 
+        allow read, write: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
-        allow create: if request.auth != null && 
+        allow create: if request.auth != null &&
+          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
+      }
+
+      // Room tasks - only room members can access
+      match /tasks/{taskId} {
+        allow read, write: if request.auth != null &&
+          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
+        allow create: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members.keys();
       }
     }
-    
-    // Personal goals - only owner can access
+
+    // ===================================================
+    // PERSONAL GOALS
+    // ===================================================
     match /personalGoals/{goalId} {
-      allow read, write: if request.auth != null && 
+      allow read, write: if request.auth != null &&
         request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && 
+      allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.userId;
     }
-    
-    // Personal expenses - only owner can access
-    match /personalExpenses/{expenseId} {
-      allow read, write: if request.auth != null && 
-        request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && 
-        request.auth.uid == request.resource.data.userId;
+
+    // ===================================================
+    // ALL EXPENSES
+    // ===================================================
+    match /allexpenses/{expenseId} {
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isOwner() {
+        return isSignedIn() && request.auth.uid == resource.data.addedBy;
+      }
+
+      function isRoomMember() {
+        return isSignedIn() &&
+          (resource.data.type == 'group' && request.auth.uid in get(/databases/$(database)/documents/rooms/$(resource.data.roomId)).data.members.keys());
+      }
+
+      function allowedExpenseKeys() {
+        return ['title', 'amount', 'category', 'date', 'note', 'type', 'roomId', 'roomTitle', 'addedBy', 'addedByName', 'addedByEmail', 'splitType', 'selectedMembers', 'customSplits', 'totalAmount', 'createdAt', 'updatedAt'];
+      }
+
+      function hasOnlyAllowedExpenseKeys() {
+        return request.resource.data.keys().hasOnly(allowedExpenseKeys());
+      }
+
+      function isValidExpenseStrings() {
+        return (request.resource.data.title is string) &&
+               (request.resource.data.category is string) &&
+               (request.resource.data.note is string) &&
+               (request.resource.data.type is string) &&
+               (request.resource.data.addedByName is string) &&
+               (request.resource.data.addedByEmail is string);
+      }
+
+      function isValidExpenseNumbers() {
+        return (request.resource.data.amount is number) &&
+               (request.resource.data.totalAmount is number);
+      }
+
+      function isValidExpenseArrays() {
+        return (request.resource.data.selectedMembers is list);
+      }
+
+      function isValidExpenseCreate() {
+        return isSignedIn() &&
+               hasOnlyAllowedExpenseKeys() &&
+               isValidExpenseStrings() &&
+               isValidExpenseNumbers() &&
+               isValidExpenseArrays() &&
+               request.auth.uid == request.resource.data.addedBy &&
+               (request.resource.data.type != 'group' || 
+                request.auth.uid in get(/databases/$(database)/documents/rooms/$(request.resource.data.roomId)).data.members.keys());
+      }
+
+      allow read: if isOwner() || isRoomMember();
+      allow write: if isOwner();
+      allow create: if isValidExpenseCreate();
+      allow update: if isOwner() && hasOnlyAllowedExpenseKeys() && isValidExpenseStrings() && isValidExpenseNumbers() && isValidExpenseArrays();
+      allow delete: if isOwner();
     }
-    
-    // Tasks - only assigned user or creator can access
+
+    // ===================================================
+    // TASKS
+    // ===================================================
     match /tasks/{taskId} {
-      allow read, write: if request.auth != null && 
-        (request.auth.uid == resource.data.assignedTo || 
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == resource.data.assignedTo ||
          request.auth.uid == resource.data.createdBy);
-      allow create: if request.auth != null && 
+      allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.createdBy;
     }
-    
-    // Notifications - only recipient can read
+
+    // ===================================================
+    // NOTIFICATIONS
+    // ===================================================
     match /notifications/{notificationId} {
-      allow read: if request.auth != null && 
+      allow read: if request.auth != null &&
         request.auth.uid == resource.data.userId;
-      allow write: if false; // Only server can write notifications
+      allow write: if false; // only server can write
     }
   }
 }

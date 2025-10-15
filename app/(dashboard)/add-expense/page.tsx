@@ -1,18 +1,37 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Upload, Camera, Calendar as CalendarIcon, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Upload, Camera, Users, Calculator, Calendar as CalendarIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Slider } from '@/components/ui/slider';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
+import { db } from '@/lib/firebase';
+import { collection, doc, onSnapshot, query, where, or, serverTimestamp, setDoc, addDoc, getDoc } from 'firebase/firestore';
+import { useAuth } from '@/components/auth-provider';
+
+interface Room {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  members: Record<string, boolean>;
+  membersCount: number;
+  joinCode: string;
+  totalExpenses: number;
+}
 
 const categories = [
   'Food & Dining',
@@ -26,20 +45,180 @@ const categories = [
   'Others'
 ];
 
-const userRooms = [
-  { id: '1', name: 'Family Expenses', avatar: '👨‍👩‍👧‍👦' },
-  { id: '2', name: 'Friends Trip', avatar: '🏖️' },
-  { id: '3', name: 'Work Lunch', avatar: '🍽️' },
-];
-
 export default function AddExpensePage() {
-  const [activeTab, setActiveTab] = useState('personal');
-  const [date, setDate] = useState<Date>(new Date());
-  const [amount, setAmount] = useState('');
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
-  const [note, setNote] = useState('');
+  const router = useRouter();
+  const { user } = useAuth();
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Personal expense state
+  const [personalDate, setPersonalDate] = useState<Date>(new Date());
+  const [personalAmount, setPersonalAmount] = useState('');
+  const [personalTitle, setPersonalTitle] = useState('');
+  const [personalCategory, setPersonalCategory] = useState('');
+  const [personalNote, setPersonalNote] = useState('');
+
+  // Group expense state
+  const [groupDate, setGroupDate] = useState<Date>(new Date());
+  const [groupAmount, setGroupAmount] = useState('');
+  const [groupTitle, setGroupTitle] = useState('');
+  const [groupCategory, setGroupCategory] = useState('');
+  const [groupNote, setGroupNote] = useState('');
   const [selectedRoom, setSelectedRoom] = useState('');
+  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal');
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [customSplits, setCustomSplits] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'rooms'),
+      or(where('members.' + user.uid, '==', true), where('createdBy', '==', user.uid))
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedRooms: Room[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Room));
+      setRooms(fetchedRooms);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching rooms:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleMemberToggle = (memberId: string) => {
+    setSelectedMembers(prev =>
+      prev.includes(memberId)
+        ? prev.filter(id => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
+
+  const handleCustomSplitChange = (memberId: string, value: number[]) => {
+    setCustomSplits(prev => ({
+      ...prev,
+      [memberId]: value[0]
+    }));
+  };
+
+  const totalAmount = parseFloat(groupAmount) || 0;
+  const equalSplit = totalAmount / selectedMembers.length;
+  const customTotal = Object.values(customSplits).reduce((sum, val) => sum + val, 0);
+
+  const handlePersonalSubmit = async () => {
+    if (!user || !personalTitle || !personalAmount) return;
+
+    try {
+      const expenseData = {
+        title: personalTitle.trim(),
+        amount: parseFloat(personalAmount),
+        category: personalCategory,
+        date: personalDate.toISOString(),
+        note: personalNote.trim(),
+        type: 'personal',
+        addedBy: user.uid,
+        addedByName: user.displayName || 'User',
+        addedByEmail: user.email,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(db, 'allexpenses'), expenseData);
+
+      // Reset form
+      setPersonalTitle('');
+      setPersonalAmount('');
+      setPersonalCategory('');
+      setPersonalNote('');
+      setPersonalDate(new Date());
+
+      router.push('/dashboard');
+    } catch (error) {
+      console.error('Error adding personal expense:', error);
+    }
+  };
+
+  const handleGroupSubmit = async () => {
+    if (!user || !selectedRoom || !groupTitle || !groupAmount || selectedMembers.length === 0) return;
+
+    try {
+      const roomRef = doc(db, 'rooms', selectedRoom);
+      const roomSnap = await getDoc(roomRef);
+      if (!roomSnap.exists()) {
+        alert('Room not found');
+        return;
+      }
+
+      const roomData = roomSnap.data() as Room;
+
+      const expenseData = {
+        title: groupTitle.trim(),
+        amount: parseFloat(groupAmount),
+        category: groupCategory,
+        date: groupDate.toISOString(),
+        note: groupNote.trim(),
+        type: 'group',
+        roomId: selectedRoom,
+        roomTitle: roomData.title,
+        addedBy: user.uid,
+        addedByName: user.displayName || 'User',
+        addedByEmail: user.email,
+        splitType,
+        selectedMembers,
+        customSplits: splitType === 'custom' ? customSplits : {},
+        totalAmount,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // Save to allexpenses collection
+      await addDoc(collection(db, 'allexpenses'), expenseData);
+
+      // Also save to room's expenses subcollection
+      await addDoc(collection(db, 'rooms', selectedRoom, 'expenses'), {
+        ...expenseData,
+        roomId: selectedRoom,
+      });
+
+      // Update room's total expenses
+      await setDoc(roomRef, {
+        totalExpenses: roomData.totalExpenses + totalAmount,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Reset form
+      setGroupTitle('');
+      setGroupAmount('');
+      setGroupCategory('');
+      setGroupNote('');
+      setGroupDate(new Date());
+      setSelectedRoom('');
+      setSplitType('equal');
+      setSelectedMembers([]);
+      setCustomSplits({});
+
+      router.push('/dashboard');
+    } catch (error) {
+      console.error('Error adding group expense:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -47,10 +226,20 @@ export default function AddExpensePage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center"
+        className="flex items-center gap-4"
       >
-        <h1 className="text-3xl font-bold mb-2">Add New Expense</h1>
-        <p className="text-muted-foreground">Record your personal or group expenses</p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.back()}
+          className="h-10 w-10 p-0 rounded-2xl"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold">Add New Expense</h1>
+          <p className="text-muted-foreground">Record your personal or group expenses</p>
+        </div>
       </motion.div>
 
       {/* Expense Type Tabs */}
@@ -59,7 +248,7 @@ export default function AddExpensePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs defaultValue="personal" className="space-y-6">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl">
             <TabsTrigger value="personal" className="rounded-xl">Personal Expense</TabsTrigger>
             <TabsTrigger value="group" className="rounded-xl">Group Expense</TabsTrigger>
@@ -83,8 +272,8 @@ export default function AddExpensePage() {
                     <Input
                       id="personal-title"
                       placeholder="e.g., Coffee at Starbucks"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      value={personalTitle}
+                      onChange={(e) => setPersonalTitle(e.target.value)}
                       className="rounded-xl"
                     />
                   </div>
@@ -95,8 +284,8 @@ export default function AddExpensePage() {
                       id="personal-amount"
                       type="number"
                       placeholder="0.00"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      value={personalAmount}
+                      onChange={(e) => setPersonalAmount(e.target.value)}
                       className="rounded-xl text-2xl font-bold"
                     />
                   </div>
@@ -104,7 +293,7 @@ export default function AddExpensePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Category</Label>
-                      <Select value={category} onValueChange={setCategory}>
+                      <Select value={personalCategory} onValueChange={setPersonalCategory}>
                         <SelectTrigger className="rounded-xl">
                           <SelectValue placeholder="Select category" />
                         </SelectTrigger>
@@ -125,14 +314,14 @@ export default function AddExpensePage() {
                             className="w-full justify-start text-left font-normal rounded-xl"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {date ? format(date, 'PPP') : 'Pick a date'}
+                            {personalDate ? format(personalDate, 'PPP') : 'Pick a date'}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
-                            selected={date}
-                            onSelect={(date) => date && setDate(date)}
+                            selected={personalDate}
+                            onSelect={(date) => date && setPersonalDate(date)}
                             initialFocus
                           />
                         </PopoverContent>
@@ -145,47 +334,19 @@ export default function AddExpensePage() {
                     <Textarea
                       id="personal-note"
                       placeholder="Add any additional details..."
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
+                      value={personalNote}
+                      onChange={(e) => setPersonalNote(e.target.value)}
                       className="rounded-xl"
                       rows={3}
                     />
                   </div>
 
-                  {/* Receipt Upload */}
-                  <div className="space-y-2">
-                    <Label>Receipt (Optional)</Label>
-                    <div className="border-2 border-dashed border-border rounded-2xl p-8 text-center">
-                      <div className="space-y-4">
-                        <div className="h-12 w-12 bg-muted rounded-2xl flex items-center justify-center mx-auto">
-                          <Upload className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="font-medium mb-2">Upload Receipt</p>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Drag and drop or click to upload
-                          </p>
-                          <div className="flex justify-center gap-2">
-                            <Button variant="outline" size="sm" className="rounded-xl">
-                              <Upload className="h-4 w-4 mr-2" />
-                              Browse Files
-                            </Button>
-                            <Button variant="outline" size="sm" className="rounded-xl">
-                              <Camera className="h-4 w-4 mr-2" />
-                              Take Photo
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="flex gap-3 pt-4">
-                    <Button variant="outline" className="flex-1 rounded-xl">
-                      Save as Draft
+                    <Button variant="outline" className="flex-1 rounded-xl" onClick={() => router.back()}>
+                      Cancel
                     </Button>
-                    <Button className="flex-1 rounded-xl">
-                      Add Expense
+                    <Button className="flex-1 rounded-xl" onClick={handlePersonalSubmit} disabled={!personalTitle || !personalAmount}>
+                      Add Personal Expense
                     </Button>
                   </div>
                 </CardContent>
@@ -198,7 +359,7 @@ export default function AddExpensePage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="max-w-2xl mx-auto"
+              className="max-w-4xl mx-auto"
             >
               <Card>
                 <CardHeader>
@@ -216,11 +377,14 @@ export default function AddExpensePage() {
                         <SelectValue placeholder="Choose a room" />
                       </SelectTrigger>
                       <SelectContent>
-                        {userRooms.map((room) => (
+                        {rooms.map((room) => (
                           <SelectItem key={room.id} value={room.id}>
                             <div className="flex items-center gap-2">
-                              <span>{room.avatar}</span>
-                              <span>{room.name}</span>
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage src={room.imageUrl || ''} />
+                                <AvatarFallback>{room.title[0]?.toUpperCase() || 'R'}</AvatarFallback>
+                              </Avatar>
+                              <span>{room.title}</span>
                             </div>
                           </SelectItem>
                         ))}
@@ -235,8 +399,8 @@ export default function AddExpensePage() {
                         <Input
                           id="group-title"
                           placeholder="e.g., Dinner at Pizza Palace"
-                          value={title}
-                          onChange={(e) => setTitle(e.target.value)}
+                          value={groupTitle}
+                          onChange={(e) => setGroupTitle(e.target.value)}
                           className="rounded-xl"
                         />
                       </div>
@@ -247,8 +411,8 @@ export default function AddExpensePage() {
                           id="group-amount"
                           type="number"
                           placeholder="0.00"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
+                          value={groupAmount}
+                          onChange={(e) => setGroupAmount(e.target.value)}
                           className="rounded-xl text-2xl font-bold"
                         />
                       </div>
@@ -256,7 +420,7 @@ export default function AddExpensePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Category</Label>
-                          <Select value={category} onValueChange={setCategory}>
+                          <Select value={groupCategory} onValueChange={setGroupCategory}>
                             <SelectTrigger className="rounded-xl">
                               <SelectValue placeholder="Select category" />
                             </SelectTrigger>
@@ -277,14 +441,14 @@ export default function AddExpensePage() {
                                 className="w-full justify-start text-left font-normal rounded-xl"
                               >
                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                {date ? format(date, 'PPP') : 'Pick a date'}
+                                {groupDate ? format(groupDate, 'PPP') : 'Pick a date'}
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0" align="start">
                               <Calendar
                                 mode="single"
-                                selected={date}
-                                onSelect={(date) => date && setDate(date)}
+                                selected={groupDate}
+                                onSelect={(date) => date && setGroupDate(date)}
                                 initialFocus
                               />
                             </PopoverContent>
@@ -292,23 +456,143 @@ export default function AddExpensePage() {
                         </div>
                       </div>
 
-                      <div className="bg-primary/5 rounded-2xl p-4">
-                        <p className="text-sm font-medium text-primary mb-2">
-                          💡 Quick Add
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          This will add the expense to the selected room. You can customize the split details on the next page.
-                        </p>
+                      <div className="space-y-2">
+                        <Label htmlFor="group-note">Note (Optional)</Label>
+                        <Textarea
+                          id="group-note"
+                          placeholder="Add any additional details..."
+                          value={groupNote}
+                          onChange={(e) => setGroupNote(e.target.value)}
+                          className="rounded-xl"
+                          rows={3}
+                        />
                       </div>
 
-                      <div className="flex gap-3 pt-4">
-                        <Button variant="outline" className="flex-1 rounded-xl">
-                          Cancel
-                        </Button>
-                        <Button className="flex-1 rounded-xl">
-                          Continue to Split
-                        </Button>
-                      </div>
+                      {/* Split Details */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Calculator className="h-5 w-5" />
+                            Split Details
+                          </CardTitle>
+                          <CardDescription>Choose how to split this expense</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          {/* Split Type Toggle */}
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                              <Label>Split Type</Label>
+                              <p className="text-sm text-muted-foreground">
+                                {splitType === 'equal' ? 'Split equally among selected members' : 'Set custom amounts'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Label htmlFor="split-type" className="text-sm">Equal</Label>
+                              <Switch
+                                id="split-type"
+                                checked={splitType === 'custom'}
+                                onCheckedChange={(checked) => setSplitType(checked ? 'custom' : 'equal')}
+                              />
+                              <Label htmlFor="split-type" className="text-sm">Custom</Label>
+                            </div>
+                          </div>
+
+                          {/* Member Selection */}
+                          <div className="space-y-3">
+                            <Label>Select Members</Label>
+                            <div className="space-y-3">
+                              {Object.entries(rooms.find(r => r.id === selectedRoom)?.members || {}).map(([uid, isMember]) => {
+                                if (!isMember) return null;
+                                const isSelected = selectedMembers.includes(uid);
+                                const memberSplit = splitType === 'equal'
+                                  ? equalSplit
+                                  : customSplits[uid] || 0;
+
+                                return (
+                                  <div
+                                    key={uid}
+                                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'border-primary bg-primary/5'
+                                        : 'border-border hover:border-primary/50'
+                                    }`}
+                                    onClick={() => handleMemberToggle(uid)}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <Avatar className="h-10 w-10">
+                                          <AvatarFallback>{uid[0].toUpperCase()}</AvatarFallback>
+                                        </Avatar>
+                                        <div>
+                                          <p className="font-medium">{uid === user?.uid ? 'You' : `User ${uid.slice(0, 8)}`}</p>
+                                          <p className="text-sm text-muted-foreground">{uid}</p>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        {isSelected && (
+                                          <Badge variant="secondary">
+                                            ₹{memberSplit.toFixed(2)}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Custom Split Slider */}
+                                    {isSelected && splitType === 'custom' && (
+                                      <div className="mt-4 space-y-2">
+                                        <div className="flex justify-between text-sm">
+                                          <span>Amount</span>
+                                          <span>₹{(customSplits[uid] || 0).toFixed(2)}</span>
+                                        </div>
+                                        <Slider
+                                          value={[customSplits[uid] || 0]}
+                                          onValueChange={(value) => handleCustomSplitChange(uid, value)}
+                                          max={totalAmount}
+                                          step={0.01}
+                                          className="w-full"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Split Summary */}
+                          <div className="bg-muted/50 rounded-2xl p-4 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium">Total Amount</span>
+                              <span className="font-bold text-lg">₹{totalAmount.toFixed(2)}</span>
+                            </div>
+                            {splitType === 'custom' && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm text-muted-foreground">Allocated</span>
+                                <span className={`text-sm font-medium ${
+                                  Math.abs(customTotal - totalAmount) < 0.01
+                                    ? 'text-green-600'
+                                    : 'text-red-600'
+                                }`}>
+                                  ₹{customTotal.toFixed(2)}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-muted-foreground">Selected Members</span>
+                              <span className="text-sm font-medium">{selectedMembers.length}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3 pt-4">
+                            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => router.back()}>
+                              Cancel
+                            </Button>
+                            <Button className="flex-1 rounded-xl" onClick={handleGroupSubmit} disabled={!groupTitle || !groupAmount || selectedMembers.length === 0}>
+                              Add Group Expense
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </>
                   )}
                 </CardContent>

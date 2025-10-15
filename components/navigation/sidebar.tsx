@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Chrome as Home, Users, Plus, Target, User, Settings, Menu, X, DollarSign } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import { Chrome as Home, Users, Plus, Target, User, Settings, Menu, X, DollarSign, LogOut } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useAuth } from '@/components/auth-provider';
 
 const navItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
@@ -21,6 +23,8 @@ const navItems = [
 export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { profile, user, signOut } = useAuth();
 
   return (
     <motion.aside
@@ -91,23 +95,37 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-border">
-        <div className={cn('flex items-center', isCollapsed ? 'justify-center' : 'justify-between')}>
-          <ThemeToggle />
+        <div className={cn('flex items-center gap-2', isCollapsed ? 'justify-center' : 'justify-between')}>
+        
           <AnimatePresence>
             {!isCollapsed && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center gap-2"
+                className="flex items-center gap-3 flex-1 justify-center"
               >
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="h-4 w-4 text-primary" />
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={profile?.photoURL || ''} />
+                    <AvatarFallback className="text-xs">
+                      {(profile?.displayName?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="text-sm leading-tight">
+                    <p className="font-medium truncate max-w-[140px]">{profile?.displayName || user?.email || 'User'}</p>
+                    <p className="text-muted-foreground text-xs">Free Plan</p>
+                  </div>
                 </div>
-                <div className="text-sm">
-                  <p className="font-medium">John Doe</p>
-                  <p className="text-muted-foreground">Free Plan</p>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={async () => { await signOut(); router.push('/auth/login'); }}
+                >
+                  <LogOut className="h-4 w-4 mr-1" />
+                  Logout
+                </Button>
               </motion.div>
             )}
           </AnimatePresence>

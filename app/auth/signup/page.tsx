@@ -2,29 +2,37 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, DollarSign } from 'lucide-react';
+import { DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth-provider';
 
 export default function SignUpPage() {
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { signInWithGoogle, signInWithFacebook } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogle = async () => {
     setIsLoading(true);
-    
-    // Simulate Firebase signup
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await signInWithGoogle();
       router.push('/dashboard');
-    }, 2000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFacebook = async () => {
+    setIsLoading(true);
+    try {
+      await signInWithFacebook();
+      router.push('/dashboard');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -50,83 +58,6 @@ export default function SignUpPage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
-                <Input
-                  id="firstName"
-                  placeholder="John"
-                  required
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
-                <Input
-                  id="lastName"
-                  placeholder="Doe"
-                  required
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="john@example.com"
-                required
-                className="rounded-xl"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Create a strong password"
-                  required
-                  className="rounded-xl pr-10"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full rounded-xl"
-              size="lg"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="h-5 w-5 border-2 border-current border-t-transparent rounded-full"
-                />
-              ) : (
-                'Create Account'
-              )}
-            </Button>
-          </form>
-
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <Separator />
@@ -136,7 +67,7 @@ export default function SignUpPage() {
             </div>
           </div>
 
-          <Button variant="outline" className="w-full rounded-xl" size="lg">
+          <Button variant="outline" className="w-full rounded-xl" size="lg" onClick={handleGoogle} disabled={isLoading}>
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
                 fill="currentColor"
@@ -156,6 +87,13 @@ export default function SignUpPage() {
               />
             </svg>
             Continue with Google
+          </Button>
+
+          <Button variant="outline" className="w-full rounded-xl" size="lg" onClick={handleFacebook} disabled={isLoading}>
+            <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M22 12.06C22 6.48 17.52 2 11.94 2S2 6.48 2 12.06C2 17.08 5.66 21.21 10.44 22v-7.02H7.9v-2.92h2.54V9.41c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.23.2 2.23.2v2.45h-1.26c-1.24 0-1.62.77-1.62 1.56v1.87h2.76l-.44 2.92h-2.32V22C18.34 21.21 22 17.08 22 12.06z" />
+            </svg>
+            Continue with Facebook
           </Button>
 
           <div className="text-center text-sm">

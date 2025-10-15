@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, CreditCard as Edit, Settings, TrendingUp, Target, Users, DollarSign, Award, Calendar } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,48 +13,74 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { useAuth } from '@/components/auth-provider';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { useRouter } from 'next/navigation';
 
 const userStats = {
-  totalExpenses: 45600,
-  activeRooms: 3,
-  completedGoals: 2,
-  totalSavings: 125000,
-  joinedDate: '2024-03-15',
+  totalExpenses: 0,
+  activeRooms: 0,
+  completedGoals: 0,
+  totalSavings: 0,
+  joinedDate: new Date().toISOString().slice(0, 10),
   expenseCategories: [
-    { name: 'Food', amount: 18500, percentage: 40 },
-    { name: 'Transport', amount: 9200, percentage: 20 },
-    { name: 'Entertainment', amount: 6900, percentage: 15 },
-    { name: 'Utilities', amount: 5500, percentage: 12 },
-    { name: 'Others', amount: 5500, percentage: 13 },
+    { name: 'Food', amount: 0, percentage: 0 },
+    { name: 'Transport', amount: 0, percentage: 0 },
+    { name: 'Entertainment', amount: 0, percentage: 0 },
+    { name: 'Utilities', amount: 0, percentage: 0 },
+    { name: 'Others', amount: 0, percentage: 0 },
   ],
   monthlyTrend: [
-    { month: 'Jan', amount: 12000 },
-    { month: 'Feb', amount: 15000 },
-    { month: 'Mar', amount: 11000 },
-    { month: 'Apr', amount: 13500 },
-    { month: 'May', amount: 14100 },
+    { month: 'Jan', amount: 0 },
+    { month: 'Feb', amount: 0 },
+    { month: 'Mar', amount: 0 },
+    { month: 'Apr', amount: 0 },
+    { month: 'May', amount: 0 },
   ],
   achievements: [
-    { id: 1, title: 'First Goal Completed', description: 'Completed your first savings goal', icon: '🎯', earned: true },
-    { id: 2, title: 'Expense Tracker', description: 'Logged 100+ expenses', icon: '📊', earned: true },
-    { id: 3, title: 'Team Player', description: 'Joined 3+ rooms', icon: '👥', earned: true },
+    { id: 1, title: 'First Goal Completed', description: 'Completed your first savings goal', icon: '🎯', earned: false },
+    { id: 2, title: 'Expense Tracker', description: 'Logged 100+ expenses', icon: '📊', earned: false },
+    { id: 3, title: 'Team Player', description: 'Joined 3+ rooms', icon: '👥', earned: false },
     { id: 4, title: 'Budget Master', description: 'Stayed under budget for 3 months', icon: '💰', earned: false },
-    { id: 5, title: 'Savings Champion', description: 'Saved ₹1,00,000+', icon: '🏆', earned: true },
+    { id: 5, title: 'Savings Champion', description: 'Saved ₹1,00,000+', icon: '🏆', earned: false },
   ],
 };
 
 export default function ProfilePage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const { profile, loading, updateProfile } = useAuth();
+  const router = useRouter();
   const [profileData, setProfileData] = useState({
-    displayName: 'John Doe',
-    email: 'john@example.com',
-    bio: 'Passionate about financial wellness and collaborative expense management.',
+    displayName: '',
+    email: '',
+    bio: '',
     photoURL: '',
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setProfileData({
+        displayName: profile.displayName || 'User',
+        email: profile.email || '',
+        bio: profile.bio || '',
+        photoURL: profile.photoURL || '',
+      });
+    }
+  }, [profile]);
 
   const earnedAchievements = userStats.achievements.filter(a => a.earned);
   const totalAchievements = userStats.achievements.length;
+
+  if (loading || !profile) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Loading profile...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-8">
@@ -67,17 +93,54 @@ export default function ProfilePage() {
         <div className="relative inline-block mb-4">
           <Avatar className="h-24 w-24">
             <AvatarImage src={profileData.photoURL} />
-            <AvatarFallback className="text-2xl">{profileData.displayName[0]}</AvatarFallback>
+            <AvatarFallback className="text-2xl">{(profileData.displayName?.[0] || profileData.email?.[0] || 'U').toUpperCase()}</AvatarFallback>
           </Avatar>
+          
           <Button
             size="sm"
             className="absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
           >
             <Camera className="h-4 w-4" />
           </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setUploading(true);
+              try {
+                const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dfaeksnq0';
+                const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'dropshipping';
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('upload_preset', uploadPreset);
+                formData.append('folder', 'splitlyfi/profiles');
+
+                const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+                  method: 'POST',
+                  body: formData,
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data?.error?.message || 'Upload failed');
+                const url = data.secure_url as string;
+                setProfileData(prev => ({ ...prev, photoURL: url }));
+                await updateProfile({ photoURL: url });
+              } catch (err) {
+                console.error('Image upload failed:', err);
+              } finally {
+                setUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+              }
+            }}
+          />
         </div>
-        <h1 className="text-3xl font-bold mb-2">{profileData.displayName}</h1>
-        <p className="text-muted-foreground mb-4">{profileData.email}</p>
+        <h1 className="text-3xl font-bold mb-2">{profileData.displayName || 'User'}</h1>
+        <p className="text-muted-foreground mb-4">{profileData.email || ''}</p>
         <p className="text-sm text-muted-foreground max-w-md mx-auto mb-6">
           {profileData.bio}
         </p>
@@ -135,7 +198,15 @@ export default function ProfilePage() {
                     Cancel
                   </Button>
                   <Button
-                    onClick={() => setIsEditModalOpen(false)}
+                    onClick={async () => {
+                      await updateProfile({
+                        displayName: profileData.displayName,
+                        email: profileData.email,
+                        bio: profileData.bio,
+                        photoURL: profileData.photoURL,
+                      });
+                      setIsEditModalOpen(false);
+                    }}
                     className="flex-1 rounded-xl"
                   >
                     Save Changes
@@ -144,9 +215,13 @@ export default function ProfilePage() {
               </div>
             </DialogContent>
           </Dialog>
-          <Button variant="outline" className="rounded-2xl">
+          <Button variant="outline" className="rounded-2xl" onClick={() => router.push('/settings')}>
             <Settings className="h-4 w-4 mr-2" />
             Settings
+          </Button>
+          <Button variant="outline" className="rounded-2xl">
+            
+            <ThemeToggle/>
           </Button>
         </div>
       </motion.div>
