@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/firebase';
-import { collection, doc, onSnapshot, query, where, or, serverTimestamp, setDoc, getDocs, updateDoc, increment } from 'firebase/firestore';
+import { collection, collectionGroup, doc, onSnapshot, query, where, or, serverTimestamp, setDoc, getDoc, getDocs, updateDoc, increment } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-provider';
 
@@ -26,7 +26,6 @@ interface Room {
   currency: string;
   category: string;
   joinCode: string;
-  members: string[];
   membersCount: number;
   totalExpenses: number;
   createdBy: string;
@@ -72,24 +71,52 @@ export default function RoomsPage() {
       return;
     }
 
-    const q = query(
-      collection(db, 'rooms'),
-      or(where('members.' + user.uid, '==', true), where('createdBy', '==', user.uid))
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedRooms: Room[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Room));
-      setRooms(fetchedRooms);
+    // Listener for rooms created by the user
+    const createdByQuery = query(collection(db, 'rooms'), where('createdBy', '==', user.uid));
+    const unsubscribeCreated = onSnapshot(createdByQuery, (snapshot) => {
+      const createdRooms: Room[] = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Room));
+      setRooms((prev) => {
+        const prevById = new Map(prev.map(r => [r.id, r]));
+        createdRooms.forEach(r => prevById.set(r.id, r));
+        return Array.from(prevById.values());
+      });
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching rooms:', error);
+      console.error('Error fetching created rooms:', error);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Listener for membership via subcollection rooms/{roomId}/members where uid == current user
+    const membersQ = query(collectionGroup(db, 'members'), where('uid', '==', user.uid));
+    const unsubscribeMembers = onSnapshot(membersQ, async (snapshot) => {
+      try {
+        const roomIds = Array.from(new Set(snapshot.docs.map(d => d.ref.parent.parent?.id).filter(Boolean))) as string[];
+        // Fetch each room document
+        const roomDocs = await Promise.all(roomIds.map(async (rid) => {
+          const rref = doc(db, 'rooms', rid);
+          const rsnap = await getDoc(rref);
+          return rsnap.exists() ? ({ id: rsnap.id, ...rsnap.data() } as Room) : null;
+        }));
+        const memberRooms = roomDocs.filter(Boolean) as Room[];
+        setRooms((prev) => {
+          const byId = new Map(prev.map(r => [r.id, r]));
+          memberRooms.forEach(r => byId.set(r.id, r));
+          return Array.from(byId.values());
+        });
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching member rooms:', err);
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Error listening to memberships:', error);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribeCreated();
+      unsubscribeMembers();
+    };
   }, [user]);
 
   const handleViewDetails = (roomId: string) => {
@@ -127,7 +154,7 @@ export default function RoomsPage() {
       const roomRef = doc(roomsCol);
       const joinCode = roomRef.id;
       const selectedCategory = customCategory.trim() ? customCategory.trim() : category;
-      const membersArray: string[] = [user.uid];
+      const selectedUserLimit = hasLimit ? Math.max(1, Number(limit || 1)) : null;
 
       await setDoc(roomRef, {
         id: roomRef.id,
@@ -135,16 +162,22 @@ export default function RoomsPage() {
         description: description.trim(),
         imageUrl: imageUrl,
         hasLimit,
-        userLimit: hasLimit ? Number(limit || 0) : null,
+        userLimit: selectedUserLimit,
         currency,
         category: selectedCategory,
         joinCode,
-        members: membersArray,
-        membersCount: membersArray.length,
+        membersCount: 1,
         totalExpenses: 0,
         createdBy: user.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+
+      // Create member document for the creator
+      const memberRef = doc(db, 'rooms', roomRef.id, 'members', user.uid);
+      await setDoc(memberRef, {
+        uid: user.uid,
+        joinedAt: serverTimestamp(),
       });
 
       setTitle('');
@@ -168,24 +201,26 @@ export default function RoomsPage() {
     try {
       setJoining(true);
 
-      // Find the room by joinCode
-      const roomsQuery = query(collection(db, 'rooms'), where('joinCode', '==', inviteCode.trim()));
-      const querySnapshot = await getDocs(roomsQuery);
+      // Fetch the room directly by ID (invite code equals document ID)
+      const joinRoomId = inviteCode.trim();
+      const roomRef = doc(db, 'rooms', joinRoomId);
+      const roomSnap = await getDoc(roomRef);
 
-      if (querySnapshot.empty) {
+      if (!roomSnap.exists()) {
         alert('Invalid invite code. Please check and try again.');
         return;
       }
 
-      const roomDoc = querySnapshot.docs[0];
-      const roomData = roomDoc.data() as Room;
+      const roomData = roomSnap.data() as Room;
 
       // Check if user is already a member
-      if (roomData.members.includes(user.uid)) {
+      const memberRef = doc(db, 'rooms', joinRoomId, 'members', user.uid);
+      const memberSnap = await getDoc(memberRef);
+      if (memberSnap.exists()) {
         alert('You are already a member of this room.');
         setInviteCode('');
         setIsJoinModalOpen(false);
-        router.push(`/rooms/${roomDoc.id}`);
+        router.push(`/rooms/${joinRoomId}`);
         return;
       }
 
@@ -195,13 +230,15 @@ export default function RoomsPage() {
         return;
       }
 
-      // Add user to room members
-      const updatedMembers = [...roomData.members, user.uid];
-      const newMembersCount = updatedMembers.length;
+      // Create member document for the joining user
+      await setDoc(memberRef, {
+        uid: user.uid,
+        joinedAt: serverTimestamp(),
+      });
 
-      await updateDoc(roomDoc.ref, {
-        members: updatedMembers,
-        membersCount: newMembersCount,
+      // Update room's member count
+      await updateDoc(roomRef, {
+        membersCount: roomData.membersCount + 1,
         updatedAt: serverTimestamp(),
       });
 
@@ -210,10 +247,15 @@ export default function RoomsPage() {
       setIsJoinModalOpen(false);
 
       // Redirect to room page
-      router.push(`/rooms/${roomDoc.id}`);
+      router.push(`/rooms/${joinRoomId}`);
     } catch (error) {
       console.error('Error joining room:', error);
-      alert('Failed to join room. Please try again.');
+      const firebaseError = error as { code?: string };
+      if (firebaseError.code === 'permission-denied') {
+        alert('You do not have permission to join this room. Please check the invite code or contact the room creator.');
+      } else {
+        alert('Failed to join room. Please try again.');
+      }
     } finally {
       setJoining(false);
     }

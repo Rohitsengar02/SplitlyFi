@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
-import { collection, doc, onSnapshot, query, where, or, serverTimestamp, setDoc, addDoc, getDoc } from 'firebase/firestore';
+import { collection, collectionGroup, doc, onSnapshot, query, where, serverTimestamp, setDoc, addDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from '@/components/auth-provider';
 
 interface Room {
@@ -27,10 +27,17 @@ interface Room {
   title: string;
   description: string;
   imageUrl: string;
-  members: Record<string, boolean>;
   membersCount: number;
   joinCode: string;
   totalExpenses: number;
+  createdBy?: string;
+}
+
+interface Member {
+  id: string;
+  uid: string;
+  displayName?: string;
+  photoURL?: string;
 }
 
 const categories = [
@@ -75,25 +82,81 @@ export default function AddExpensePage() {
       return;
     }
 
-    const q = query(
-      collection(db, 'rooms'),
-      or(where('members.' + user.uid, '==', true), where('createdBy', '==', user.uid))
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedRooms: Room[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Room));
-      setRooms(fetchedRooms);
+    // Rooms created by the user
+    const createdQ = query(collection(db, 'rooms'), where('createdBy', '==', user.uid));
+    const unsubCreated = onSnapshot(createdQ, (snapshot) => {
+      const createdRooms: Room[] = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Room));
+      setRooms((prev) => {
+        const byId = new Map(prev.map(r => [r.id, r]));
+        createdRooms.forEach(r => byId.set(r.id, r));
+        return Array.from(byId.values());
+      });
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching rooms:', error);
+      console.error('Error fetching created rooms:', error);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Rooms where the user is a member via subcollection
+    const membersQ = query(collectionGroup(db, 'members'), where('uid', '==', user.uid));
+    const unsubMembers = onSnapshot(membersQ, async (snapshot) => {
+      try {
+        const roomIds = Array.from(new Set(snapshot.docs.map(d => d.ref.parent.parent?.id).filter(Boolean))) as string[];
+        const roomDocs = await Promise.all(roomIds.map(async (rid) => {
+          const rref = doc(db, 'rooms', rid);
+          const rsnap = await getDoc(rref);
+          return rsnap.exists() ? ({ id: rsnap.id, ...rsnap.data() } as Room) : null;
+        }));
+        const joinedRooms = roomDocs.filter(Boolean) as Room[];
+        setRooms((prev) => {
+          const byId = new Map(prev.map(r => [r.id, r]));
+          joinedRooms.forEach(r => byId.set(r.id, r));
+          return Array.from(byId.values());
+        });
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching joined rooms:', err);
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Error listening memberships:', error);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubCreated();
+      unsubMembers();
+    };
   }, [user]);
+
+  // Load members for selected room for splitting
+  const [roomMembers, setRoomMembers] = useState<Member[]>([]);
+  useEffect(() => {
+    if (!selectedRoom) {
+      setRoomMembers([]);
+      return;
+    }
+    const q = collection(db, 'rooms', selectedRoom, 'members');
+    const unsub = onSnapshot(q, async (snapshot) => {
+      const base: Member[] = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      // Optionally hydrate with profiles
+      const enriched = await Promise.all(base.map(async (m) => {
+        try {
+          const uref = doc(db, 'users', m.uid);
+          const usnap = await getDoc(uref);
+          if (usnap.exists()) {
+            const u = usnap.data() as { displayName?: string; photoURL?: string };
+            return { ...m, displayName: u.displayName, photoURL: u.photoURL } as Member;
+          }
+        } catch {}
+        return m;
+      }));
+      setRoomMembers(enriched);
+    }, (error) => {
+      console.error('Error loading room members:', error);
+    });
+    return () => unsub();
+  }, [selectedRoom]);
 
   const handleMemberToggle = (memberId: string) => {
     setSelectedMembers(prev =>
@@ -501,43 +564,33 @@ export default function AddExpensePage() {
                           <div className="space-y-3">
                             <Label>Select Members</Label>
                             <div className="space-y-3">
-                              {Object.entries(rooms.find(r => r.id === selectedRoom)?.members || {}).map(([uid, isMember]) => {
-                                if (!isMember) return null;
+                              {roomMembers.map((m) => {
+                                const uid = m.uid;
                                 const isSelected = selectedMembers.includes(uid);
-                                const memberSplit = splitType === 'equal'
-                                  ? equalSplit
-                                  : customSplits[uid] || 0;
-
+                                const memberSplit = splitType === 'equal' ? equalSplit : (customSplits[uid] || 0);
                                 return (
                                   <div
-                                    key={uid}
-                                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                                      isSelected
-                                        ? 'border-primary bg-primary/5'
-                                        : 'border-border hover:border-primary/50'
-                                    }`}
+                                    key={m.id}
+                                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
                                     onClick={() => handleMemberToggle(uid)}
                                   >
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-3">
                                         <Avatar className="h-10 w-10">
+                                          {m.photoURL ? <AvatarImage src={m.photoURL} /> : null}
                                           <AvatarFallback>{uid[0].toUpperCase()}</AvatarFallback>
                                         </Avatar>
                                         <div>
-                                          <p className="font-medium">{uid === user?.uid ? 'You' : `User ${uid.slice(0, 8)}`}</p>
+                                          <p className="font-medium">{uid === user?.uid ? 'You' : (m.displayName || `User ${uid.slice(0, 8)}`)}</p>
                                           <p className="text-sm text-muted-foreground">{uid}</p>
                                         </div>
                                       </div>
                                       <div className="text-right">
                                         {isSelected && (
-                                          <Badge variant="secondary">
-                                            ₹{memberSplit.toFixed(2)}
-                                          </Badge>
+                                          <Badge variant="secondary">₹{memberSplit.toFixed(2)}</Badge>
                                         )}
                                       </div>
                                     </div>
-
-                                    {/* Custom Split Slider */}
                                     {isSelected && splitType === 'custom' && (
                                       <div className="mt-4 space-y-2">
                                         <div className="flex justify-between text-sm">

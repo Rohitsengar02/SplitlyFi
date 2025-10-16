@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Plus, Users, DollarSign, Target, FileText, Settings, Share2, QrCode, Copy, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Users, DollarSign, Target, FileText, Settings, Share2, QrCode, Copy, CheckCircle, ArrowUpRight, ArrowDownRight, Wallet, User } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +25,6 @@ interface Room {
   currency: string;
   category: string;
   joinCode: string;
-  members: string[];
   membersCount: number;
   totalExpenses: number;
   createdBy: string;
@@ -70,6 +69,19 @@ interface Note {
   date: string;
 }
 
+interface Member {
+  id: string;
+  uid: string;
+  joinedAt: any;
+  displayName?: string;
+  photoURL?: string;
+}
+
+interface UserProfile {
+  displayName?: string;
+  photoURL?: string;
+}
+
 export default function RoomDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -80,9 +92,21 @@ export default function RoomDetailPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [memberTotals, setMemberTotals] = useState<Record<string, number>>({});
+  const [memberPaidTotals, setMemberPaidTotals] = useState<Record<string, number>>({});
+  const [memberOwedTotals, setMemberOwedTotals] = useState<Record<string, number>>({});
+  const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  const stickerList = ['🍕','🎟️','🧾','🍔','🚗','🛒','🎉','🧃','☕','🍽️','🎁','🚌','🏖️','🧼','🔧'];
+  const pickSticker = (s: string) => {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return stickerList[h % stickerList.length];
+  };
 
   useEffect(() => {
     if (!roomId || !user) return;
@@ -107,12 +131,64 @@ export default function RoomDetailPage() {
           orderBy('date', 'desc'),
           limit(10)
         );
-        const expensesUnsubscribe = onSnapshot(expensesQuery, (snapshot) => {
+        const expensesUnsubscribe = onSnapshot(expensesQuery, async (snapshot) => {
           const fetchedExpenses: Expense[] = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           } as Expense));
           setExpenses(fetchedExpenses);
+
+          // Collect unique UIDs involved in these expenses (payer + selected members)
+          const uids = new Set<string>();
+          fetchedExpenses.forEach((e) => {
+            if (e.addedBy) uids.add(e.addedBy);
+            (e.selectedMembers || []).forEach((u) => uids.add(u));
+          });
+
+          // Fetch profiles for those UIDs
+          const entries = await Promise.all(Array.from(uids).map(async (uid) => {
+            try {
+              const uref = doc(db, 'users', uid);
+              const usnap = await getDoc(uref);
+              if (usnap.exists()) {
+                const u = usnap.data() as UserProfile;
+                return [uid, { displayName: u.displayName, photoURL: u.photoURL }] as const;
+              }
+            } catch {}
+            return [uid, {}] as const;
+          }));
+          setProfiles((prev) => {
+            const next = { ...prev };
+            entries.forEach(([uid, p]) => { next[uid] = { ...next[uid], ...p }; });
+            return next;
+          });
+
+          // Aggregate per-member paid and owed from room expenses
+          const paid: Record<string, number> = {};
+          const owed: Record<string, number> = {};
+          fetchedExpenses.forEach((e) => {
+            const total = (e.totalAmount ?? e.amount ?? 0) as number;
+            const payer = e.addedBy;
+            if (payer) paid[payer] = (paid[payer] || 0) + total;
+            const members = e.selectedMembers || [];
+            if (members.length > 0) {
+              if (e.splitType === 'custom' && e.customSplits) {
+                members.forEach((uid) => {
+                  const share = Number((e.customSplits as Record<string, number>)[uid] || 0);
+                  owed[uid] = (owed[uid] || 0) + share;
+                });
+              } else {
+                const share = total / members.length;
+                members.forEach((uid) => {
+                  owed[uid] = (owed[uid] || 0) + share;
+                });
+              }
+            }
+          });
+          setMemberPaidTotals(paid);
+          setMemberOwedTotals(owed);
+          // Maintain legacy memberTotals as 'paid' for backward compatibility in UI
+          setMemberTotals(paid);
         });
 
         // Fetch goals
@@ -128,25 +204,38 @@ export default function RoomDetailPage() {
           setGoals(fetchedGoals);
         });
 
-        // Fetch notes
-        const notesQuery = query(
-          collection(db, 'rooms', roomId, 'notes'),
-          orderBy('date', 'desc')
+        // Fetch members + hydrate with user profiles
+        const membersQuery = query(
+          collection(db, 'rooms', roomId, 'members'),
+          orderBy('joinedAt', 'asc')
         );
-        const notesUnsubscribe = onSnapshot(notesQuery, (snapshot) => {
-          const fetchedNotes: Note[] = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          } as Note));
-          setNotes(fetchedNotes);
+        const membersUnsubscribe = onSnapshot(membersQuery, async (snapshot) => {
+          const baseMembers: Member[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
+          // load user profiles for each member
+          const enriched = await Promise.all(
+            baseMembers.map(async (m) => {
+              try {
+                const uref = doc(db, 'users', m.uid);
+                const usnap = await getDoc(uref);
+                if (usnap.exists()) {
+                  const u = usnap.data() as { displayName?: string; photoURL?: string };
+                  return { ...m, displayName: u.displayName, photoURL: u.photoURL } as Member;
+                }
+              } catch (_) {}
+              return m;
+            })
+          );
+          setMembers(enriched);
         });
+
+        
 
         setLoading(false);
 
         return () => {
           expensesUnsubscribe();
           goalsUnsubscribe();
-          notesUnsubscribe();
+          membersUnsubscribe();
         };
       } catch (err) {
         console.error('Error fetching room data:', err);
@@ -225,68 +314,188 @@ export default function RoomDetailPage() {
         </div>
       </motion.div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-primary/10 rounded-2xl flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total Expenses</p>
-                  <p className="text-2xl font-bold">₹{room.totalExpenses.toLocaleString()}</p>
-                </div>
+      {/* Stats Cards Carousel */}
+      <div className="relative">
+  <div className="overflow-x-auto pb-6 -mx-2 px-2">
+    <div className="flex gap-6 snap-x snap-mandatory">
+      
+      {/* Room Info */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="min-w-[280px] h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-blue-50/60 to-indigo-100/50 dark:from-blue-900/20 dark:to-indigo-950/30 backdrop-blur-xl border border-white/10 hover:shadow-2xl transition-all duration-300 hover:-translate-y-1">
+          <CardContent className="p-6 space-y-2">
+            <div className="text-sm text-muted-foreground">🏷️ Room Info</div>
+            <div className="mt-1 font-semibold text-lg truncate">{room.title}</div>
+            <div className="text-xs text-muted-foreground truncate">{room.description}</div>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-muted-foreground">Category</div>
+                <Badge variant="secondary" className="mt-1 rounded-full bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300">
+                  {room.category}
+                </Badge>
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+              <div>
+                <div className="text-muted-foreground">Currency</div>
+                <div className="font-medium mt-1">{room.currency}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-blue-50 dark:bg-blue-950 rounded-2xl flex items-center justify-center">
-                  <Users className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Members</p>
-                  <p className="text-2xl font-bold">{room.membersCount}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+      {/* See Full Details */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7 }}
+        className="min-w-[280px] h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-sky-50/60 to-blue-100/50 dark:from-blue-900/20 dark:to-indigo-950/30 backdrop-blur-xl hover:shadow-2xl transition-all hover:-translate-y-1">
+          <CardContent className="p-6">
+            <div className="text-sm text-muted-foreground">⚡ Actions</div>
+            <div className="mt-1 font-semibold text-lg">See full details</div>
+            <div className="text-xs text-muted-foreground">Open all transactions & analytics</div>
+            <div className="mt-4">
+              <Button
+                className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:scale-[1.02] transition-transform shadow-md"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              >
+                Open Dashboard
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-green-50 dark:bg-green-950 rounded-2xl flex items-center justify-center">
-                  <Target className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Active Goals</p>
-                  <p className="text-2xl font-bold">{goals.length}</p>
-                </div>
+      {/* Total Expenses */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="min-w-[280px] h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-amber-50/60 to-orange-100/50 dark:from-amber-900/20 dark:to-orange-950/30 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="h-12 w-12 bg-amber-500/10 rounded-2xl flex items-center justify-center">
+              <DollarSign className="h-6 w-6 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Expenses</p>
+              <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">₹{room.totalExpenses.toLocaleString()}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Members Count */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="min-w-[280px] min-h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-blue-50/60 to-cyan-100/50 dark:from-blue-900/20 dark:to-cyan-950/30 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="h-12 w-12 bg-blue-500/10 rounded-2xl flex items-center justify-center">
+              <Users className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Members</p>
+              <p className="text-3xl font-bold text-blue-700 dark:text-blue-300">{room.membersCount}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Active Goals */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="min-w-[280px] min-h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-green-50/60 to-emerald-100/50 dark:from-green-900/20 dark:to-emerald-950/30 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="h-12 w-12 bg-green-500/10 rounded-2xl flex items-center justify-center">
+              <Target className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Active Goals</p>
+              <p className="text-3xl font-bold text-green-700 dark:text-green-300">{goals.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Member Avatars */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="min-w-[280px] min-h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-purple-50/60 to-pink-100/50 dark:from-purple-900/20 dark:to-pink-950/30 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all">
+          <CardContent className="p-6">
+            <div className="text-sm text-muted-foreground">👥 Members</div>
+            <div className="flex -space-x-2 mt-3">
+              {members.slice(0, 8).map(m => (
+                <Avatar key={m.id} className="h-10 w-10 ring-2 ring-background border border-white shadow-md hover:scale-105 transition-transform">
+                  {m.photoURL ? <AvatarImage src={m.photoURL} /> : null}
+                  <AvatarFallback className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                    {m.uid[0].toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+              {members.length > 8 && (
+                <div className="h-10 w-10 rounded-full bg-muted/50 flex items-center justify-center text-xs ring-2 ring-background">+{members.length - 8}</div>
+              )}
+            </div>
+            <div className="text-xs text-muted-foreground mt-3">Total {members.length} members</div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Your Expense */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="min-w-[280px] min-h-[200px] snap-start"
+      >
+        <Card className="bg-gradient-to-br from-pink-50/60 to-rose-100/50 dark:from-pink-900/20 dark:to-rose-950/30 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all">
+          <CardContent className="p-6">
+            <div className="text-sm text-muted-foreground">💰 Your Expense in Group</div>
+            <div className="mt-1 text-3xl font-bold text-pink-700 dark:text-pink-300">
+              ₹{(memberPaidTotals[user?.uid || ""] || 0).toLocaleString()}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-muted-foreground">Your Share</div>
+                <div className="font-medium">₹{(memberOwedTotals[user?.uid || ""] || 0).toLocaleString()}</div>
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+              <div>
+                <div className="text-muted-foreground">Net</div>
+                {(() => {
+                  const net = (memberPaidTotals[user?.uid || ""] || 0) - (memberOwedTotals[user?.uid || ""] || 0);
+                  return (
+                    <div className={`font-medium ${net >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {net >= 0 ? "+" : "-"}₹{Math.abs(net).toLocaleString()}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </div>
+  </div>
       </div>
+
 
       {/* Tabs */}
       <motion.div
@@ -326,29 +535,44 @@ export default function RoomDetailPage() {
                   >
                     <Card className="hover:shadow-md transition-shadow">
                       <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 bg-primary/10 rounded-2xl flex items-center justify-center">
-                              <DollarSign className="h-5 w-5 text-primary" />
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center text-xl">
+                              {pickSticker(expense.id)}
                             </div>
-                            <div>
-                              <h4 className="font-semibold">{expense.title}</h4>
-                              <p className="text-sm text-muted-foreground">
-                                Paid by {expense.addedByName || expense.addedBy} • {expense.date}
+                            <div className="min-w-0">
+                              <h4 className="font-semibold truncate">{expense.title}</h4>
+                              <p className="text-sm text-muted-foreground truncate">
+                                {new Date(expense.date).toLocaleDateString()} • {expense.category}
                               </p>
+                              {expense.selectedMembers && expense.selectedMembers.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {expense.selectedMembers.slice(0, 6).map((uid) => {
+                                    const isCustom = expense.splitType === 'custom';
+                                    const share = isCustom
+                                      ? Number((expense.customSplits as any)?.[uid] || 0)
+                                      : ((expense.totalAmount || expense.amount || 0) / (expense.selectedMembers?.length || 1));
+                                    return (
+                                      <div key={uid} className="flex items-center gap-1 px-2 py-1 rounded-full bg-muted text-xs">
+                                        <Avatar className="h-5 w-5">
+                                          {profiles[uid]?.photoURL ? <AvatarImage src={profiles[uid]?.photoURL as string} /> : null}
+                                          <AvatarFallback>{(profiles[uid]?.displayName || uid)[0]?.toUpperCase()}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="max-w-[120px] truncate">{profiles[uid]?.displayName || `User ${uid.slice(0, 6)}`}</span>
+                                        <Badge variant="secondary" className="ml-1">₹{share.toFixed(2)}</Badge>
+                                      </div>
+                                    );
+                                  })}
+                                  {expense.selectedMembers.length > 6 && (
+                                    <Badge variant="outline" className="text-xs">+{expense.selectedMembers.length - 6} more</Badge>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-bold text-lg">₹{expense.amount}</p>
-                            <Badge variant="secondary" className="text-xs">
-                              {expense.category}
-                            </Badge>
+                          <div className="text-right shrink-0">
+                            <p className="font-bold text-lg">₹{(expense.totalAmount || expense.amount).toLocaleString()}</p>
                           </div>
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-border">
-                          <p className="text-sm text-muted-foreground">
-                            Split with: {expense.selectedMembers?.join(', ') || 'No splits'}
-                          </p>
                         </div>
                       </CardContent>
                     </Card>
@@ -358,85 +582,114 @@ export default function RoomDetailPage() {
             </div>
           </TabsContent>
 
-          {/* Members Tab */}
-          <TabsContent value="members" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Room Members</h3>
-              <Button variant="outline" className="rounded-2xl" onClick={() => copyToClipboard(room.joinCode)}>
-                {copiedCode === room.joinCode ? (
-                  <>
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <QrCode className="h-4 w-4 mr-2" />
-                    Invite Code: {room.joinCode}
-                  </>
-                )}
-              </Button>
-            </div>
-            <div className="grid gap-4">
-              {Array.isArray(room.members)
-                ? room.members.map((uid, index) => (
-                    <motion.div
-                      key={uid}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                    >
-                      <Card>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-12 w-12">
-                                <AvatarFallback>{uid[0].toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <h4 className="font-semibold">{uid === user?.uid ? 'You' : `User ${uid.slice(0, 8)}`}</h4>
-                                <p className="text-sm text-muted-foreground">{uid}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold text-green-600">₹0</p>
-                              <Badge variant="secondary">Member</Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))
-                : Object.keys(room.members || {}).map((uid, index) => (
-                    <motion.div
-                      key={uid}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                    >
-                      <Card>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-12 w-12">
-                                <AvatarFallback>{uid[0].toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <h4 className="font-semibold">{uid === user?.uid ? 'You' : `User ${uid.slice(0, 8)}`}</h4>
-                                <p className="text-sm text-muted-foreground">{uid}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold text-green-600">₹0</p>
-                              <Badge variant="secondary">Member</Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))
-              }
-            </div>
-          </TabsContent>
+
+
+
+
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-semibold text-gray-800 dark:text-white flex items-center gap-2">
+            <User className="w-6 h-6 text-blue-500" /> Room Members
+          </h2>
+          <p className="text-gray-500 text-sm">Track who paid, owes, and balances in this room.</p>
+        </div>
+
+        <Button
+          variant="outline"
+          onClick={() => copyToClipboard(room.joinCode)}
+          className="flex items-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900 dark:border-blue-400"
+        >
+          {copiedCode === room.joinCode ? (
+            <>
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              Copied!
+            </>
+          ) : (
+            <>
+              <Copy className="w-4 h-4" />
+              Invite Code: {room.joinCode}
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Members Grid */}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {members.map((member, index) => {
+          const paid = memberPaidTotals[member.uid] || 0;
+          const owes = memberOwedTotals[member.uid] || 0;
+          const net = paid - owes;
+          const name = member.uid === user?.uid ? "You" : member.displayName || `User ${member.uid.slice(0, 8)}`;
+          const isPositive = net >= 0;
+
+          return (
+            <motion.div
+              key={member.uid}
+              whileHover={{ scale: 1.02 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Card className="shadow-md border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all bg-white dark:bg-gray-900">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {member.photoURL ? (
+                      <img
+                        src={member.photoURL}
+                        alt={name}
+                        className="w-12 h-12 rounded-full object-cover border border-gray-300"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white text-lg font-semibold">
+                        {member.uid[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <CardTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">{name}</CardTitle>
+                      <p className="text-xs text-gray-500">{member.uid}</p>
+                    </div>
+                  </div>
+                  
+                </CardHeader>
+
+                <CardContent className="space-y-3 mt-2">
+                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <span>Paid</span>
+                    <span className="font-medium text-green-600">₹{paid.toLocaleString()}</span>
+                  </div>
+
+                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <span>Share</span>
+                    <span className="font-medium text-red-500">₹{owes.toLocaleString()}</span>
+                  </div>
+
+                  <div
+                    className={`flex justify-between items-center text-sm font-semibold rounded-lg p-2 ${
+                      isPositive
+                        ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200"
+                        : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      {isPositive ? (
+                        <ArrowUpRight className="w-4 h-4" />
+                      ) : (
+                        <ArrowDownRight className="w-4 h-4" />
+                      )}
+                      Net
+                    </span>
+                    <span>
+                      {isPositive ? "+" : "-"}₹{Math.abs(net).toLocaleString()}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
           {/* Goals Tab */}
           <TabsContent value="goals" className="space-y-4">
@@ -469,7 +722,7 @@ export default function RoomDetailPage() {
                               </p>
                             </div>
                             <Badge variant="outline">
-                              {Math.round((goal.saved / goal.target) * 100)}%
+                              {goal.target > 0 ? Math.round((goal.saved / goal.target) * 100) : 0}%
                             </Badge>
                           </div>
                           <div>
@@ -477,7 +730,7 @@ export default function RoomDetailPage() {
                               <span>Progress</span>
                               <span>₹{goal.saved.toLocaleString()} / ₹{goal.target.toLocaleString()}</span>
                             </div>
-                            <Progress value={(goal.saved / goal.target) * 100} className="h-3" />
+                            <Progress value={goal.target > 0 ? (goal.saved / goal.target) * 100 : 0} className="h-3" />
                           </div>
                           <div>
                             <p className="text-sm font-medium mb-2">Contributors</p>
