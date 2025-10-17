@@ -319,57 +319,7 @@ export default function RoomDetailPage() {
   <div className="overflow-x-auto pb-6 -mx-2 px-2">
     <div className="flex gap-6 snap-x snap-mandatory">
       
-      {/* Room Info */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className="min-w-[280px] h-[200px] snap-start"
-      >
-        <Card className="bg-gradient-to-br from-blue-50/60 to-indigo-100/50 dark:from-blue-900/20 dark:to-indigo-950/30 backdrop-blur-xl border border-white/10 hover:shadow-2xl transition-all duration-300 hover:-translate-y-1">
-          <CardContent className="p-6 space-y-2">
-            <div className="text-sm text-muted-foreground">🏷️ Room Info</div>
-            <div className="mt-1 font-semibold text-lg truncate">{room.title}</div>
-            <div className="text-xs text-muted-foreground truncate">{room.description}</div>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-muted-foreground">Category</div>
-                <Badge variant="secondary" className="mt-1 rounded-full bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300">
-                  {room.category}
-                </Badge>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Currency</div>
-                <div className="font-medium mt-1">{room.currency}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
 
-      {/* See Full Details */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.7 }}
-        className="min-w-[280px] h-[200px] snap-start"
-      >
-        <Card className="bg-gradient-to-br from-sky-50/60 to-blue-100/50 dark:from-blue-900/20 dark:to-indigo-950/30 backdrop-blur-xl hover:shadow-2xl transition-all hover:-translate-y-1">
-          <CardContent className="p-6">
-            <div className="text-sm text-muted-foreground">⚡ Actions</div>
-            <div className="mt-1 font-semibold text-lg">See full details</div>
-            <div className="text-xs text-muted-foreground">Open all transactions & analytics</div>
-            <div className="mt-4">
-              <Button
-                className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:scale-[1.02] transition-transform shadow-md"
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              >
-                Open Dashboard
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
 
       {/* Total Expenses */}
       <motion.div
