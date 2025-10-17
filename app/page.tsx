@@ -2,10 +2,11 @@
 
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
-import { ArrowRight, DollarSign, Users, Target, TrendingUp, Shield, Smartphone } from 'lucide-react';
+import { ArrowRight, DollarSign, Users, Target, TrendingUp, Shield, Smartphone, CheckCircle, Zap, BarChart3, Bell, Lock, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 export default function LandingPage() {
   const { scrollY } = useScroll();
@@ -208,6 +209,310 @@ export default function LandingPage() {
                     </div>
                     <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
                     <p className="text-muted-foreground">{feature.description}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-muted/30">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <Badge className="mb-4 rounded-full px-4 py-1">Simple Process</Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">How It Works</h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              Get started in minutes with our simple 3-step process
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                step: '01',
+                title: 'Create a Room',
+                description: 'Set up a new expense room and invite your friends or family members',
+                icon: Users,
+                color: 'from-purple-500 to-pink-500',
+              },
+              {
+                step: '02',
+                title: 'Add Expenses',
+                description: 'Log expenses as they happen and split them automatically',
+                icon: DollarSign,
+                color: 'from-blue-500 to-cyan-500',
+              },
+              {
+                step: '03',
+                title: 'Settle Up',
+                description: 'See who owes what and settle balances with one tap',
+                icon: CheckCircle,
+                color: 'from-green-500 to-emerald-500',
+              },
+            ].map((step, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: index * 0.2 }}
+                viewport={{ once: true }}
+              >
+                <Card className="relative overflow-hidden h-full hover:shadow-xl transition-all duration-300 group">
+                  <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${step.color}`} />
+                  <CardContent className="p-8">
+                    <div className="flex items-start gap-4 mb-6">
+                      <div className={`h-16 w-16 rounded-2xl bg-gradient-to-br ${step.color} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                        <step.icon className="h-8 w-8 text-white" />
+                      </div>
+                      <div className="text-6xl font-bold text-muted-foreground/20">{step.step}</div>
+                    </div>
+                    <h3 className="text-2xl font-bold mb-3">{step.title}</h3>
+                    <p className="text-muted-foreground leading-relaxed">{step.description}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid md:grid-cols-4 gap-8">
+            {[
+              { value: '50K+', label: 'Active Users', icon: Users },
+              { value: '₹10M+', label: 'Expenses Tracked', icon: TrendingUp },
+              { value: '100K+', label: 'Rooms Created', icon: Target },
+              { value: '99.9%', label: 'Uptime', icon: Zap },
+            ].map((stat, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, scale: 0.8 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+                viewport={{ once: true }}
+              >
+                <Card className="text-center hover:shadow-lg transition-shadow">
+                  <CardContent className="p-8">
+                    <div className="h-12 w-12 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+                      <stat.icon className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                      {stat.value}
+                    </div>
+                    <p className="text-muted-foreground">{stat.label}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-muted/30">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <Badge className="mb-4 rounded-full px-4 py-1">Testimonials</Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">What Our Users Say</h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              Join thousands of satisfied users managing their finances better
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                name: 'Priya Sharma',
+                role: 'College Student',
+                content: 'SplitlyFi made managing hostel expenses with my roommates so easy! No more awkward conversations about who owes what.',
+                avatar: '👩‍🎓',
+              },
+              {
+                name: 'Rahul Verma',
+                role: 'Travel Enthusiast',
+                content: 'Perfect for group trips! We used it during our Goa trip and settling up was a breeze. Highly recommended!',
+                avatar: '🧳',
+              },
+              {
+                name: 'Anjali Patel',
+                role: 'Working Professional',
+                content: 'The goal tracking feature helped me save for my dream vacation. The insights are incredibly helpful!',
+                avatar: '💼',
+              },
+            ].map((testimonial, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: index * 0.15 }}
+                viewport={{ once: true }}
+              >
+                <Card className="h-full hover:shadow-xl transition-shadow">
+                  <CardContent className="p-8">
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="text-4xl">{testimonial.avatar}</div>
+                      <div>
+                        <h4 className="font-semibold">{testimonial.name}</h4>
+                        <p className="text-sm text-muted-foreground">{testimonial.role}</p>
+                      </div>
+                    </div>
+                    <p className="text-muted-foreground italic leading-relaxed">
+                      "{testimonial.content}"
+                    </p>
+                    <div className="flex gap-1 mt-4">
+                      {[...Array(5)].map((_, i) => (
+                        <span key={i} className="text-yellow-500">★</span>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <Badge className="mb-4 rounded-full px-4 py-1 bg-green-500/10 text-green-700 dark:text-green-400">
+              100% Free
+            </Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Simple, Transparent Pricing</h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              All features, forever free. No hidden charges, no premium tiers.
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6 }}
+            viewport={{ once: true }}
+            className="max-w-2xl mx-auto"
+          >
+            <Card className="relative overflow-hidden border-2 border-primary">
+              <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-4 py-1 text-sm font-semibold rounded-bl-lg">
+                Popular
+              </div>
+              <CardContent className="p-12">
+                <div className="text-center mb-8">
+                  <h3 className="text-2xl font-bold mb-4">Free Forever</h3>
+                  <div className="mb-6">
+                    <span className="text-6xl font-bold">₹0</span>
+                    <span className="text-muted-foreground ml-2">/ forever</span>
+                  </div>
+                  <p className="text-muted-foreground">Everything you need, completely free</p>
+                </div>
+
+                <div className="space-y-4 mb-8">
+                  {[
+                    'Unlimited rooms and members',
+                    'Unlimited expense tracking',
+                    'Smart expense splitting',
+                    'Goal tracking & analytics',
+                    'Real-time synchronization',
+                    'Mobile & desktop apps',
+                    'Bank-level security',
+                    'Priority support',
+                  ].map((feature, index) => (
+                    <div key={index} className="flex items-center gap-3">
+                      <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Link href="/auth/signup" className="block">
+                  <Button size="lg" className="w-full rounded-2xl text-lg py-6">
+                    Get Started Free
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <Badge className="mb-4 rounded-full px-4 py-1">FAQ</Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Frequently Asked Questions</h2>
+            <p className="text-xl text-muted-foreground">
+              Everything you need to know about SplitlyFi
+            </p>
+          </motion.div>
+
+          <div className="space-y-4">
+            {[
+              {
+                question: 'Is SplitlyFi really free?',
+                answer: 'Yes! SplitlyFi is 100% free with no hidden charges. All features are available to everyone, forever.',
+              },
+              {
+                question: 'How secure is my financial data?',
+                answer: 'We use bank-level encryption and security measures to protect your data. Your information is encrypted both in transit and at rest.',
+              },
+              {
+                question: 'Can I use SplitlyFi offline?',
+                answer: 'Yes! Our mobile app works offline and automatically syncs when you\'re back online.',
+              },
+              {
+                question: 'How many people can join a room?',
+                answer: 'There\'s no limit! You can add as many members as you need to any room.',
+              },
+              {
+                question: 'Can I track multiple currencies?',
+                answer: 'Yes, each room can have its own currency, and we support all major currencies.',
+              },
+              {
+                question: 'How do I settle up with someone?',
+                answer: 'SplitlyFi automatically calculates who owes what. You can then settle up using any payment method and mark it as paid in the app.',
+              },
+            ].map((faq, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, x: -20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+                viewport={{ once: true }}
+              >
+                <Card className="hover:shadow-lg transition-shadow">
+                  <CardContent className="p-6">
+                    <h3 className="font-semibold text-lg mb-2">{faq.question}</h3>
+                    <p className="text-muted-foreground">{faq.answer}</p>
                   </CardContent>
                 </Card>
               </motion.div>

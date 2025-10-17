@@ -454,112 +454,124 @@ export default function RoomsPage() {
         {rooms.map((room, index) => (
           <motion.div
             key={room.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: index * 0.1, type: "spring" }}
+            whileHover={{ y: -8 }}
+            className="group"
           >
-            <Card className="group hover:shadow-2xl transition-all duration-500 cursor-pointer border-0 bg-gradient-to-br from-white via-gray-50/50 to-gray-100/50 dark:from-gray-900 dark:via-gray-800/50 dark:to-gray-900 overflow-hidden relative">
-              {/* Image Banner */}
-              <div className="relative h-32 bg-gradient-to-r from-primary/20 to-primary/10 overflow-hidden">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 dark:from-purple-950/20 dark:via-pink-950/20 dark:to-blue-950/20 hover:shadow-2xl transition-all duration-500 h-full">
+              {/* Animated Background Gradient */}
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-pink-500/5 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              
+              {/* Image Banner with Overlay */}
+              <div className="relative h-40 overflow-hidden">
                 {room.imageUrl ? (
-                  <img
-                    src={room.imageUrl}
-                    alt={room.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
+                  <>
+                    <img
+                      src={room.imageUrl}
+                      alt={room.title}
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                  </>
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/20 flex items-center justify-center">
-                    <div className="text-4xl font-bold text-primary/30">
+                  <div className="w-full h-full bg-gradient-to-br from-purple-500 via-pink-500 to-blue-500 flex items-center justify-center relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjEiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')] opacity-30" />
+                    <div className="text-6xl font-bold text-white/90 z-10 drop-shadow-lg">
                       {room.title[0]?.toUpperCase() || 'R'}
                     </div>
                   </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                <div className="absolute top-3 right-3">
-                  <Badge variant="secondary" className="text-xs font-mono bg-white/90 backdrop-blur-sm">
-                    {room.joinCode}
+                
+                {/* Floating Badge */}
+              
+
+                {/* Category Badge */}
+                <div className="absolute bottom-3 left-3 z-10">
+                  <Badge className="bg-gradient-to-r from-purple-600 to-pink-600 text-white border-0 shadow-lg">
+                    {room.category}
                   </Badge>
                 </div>
               </div>
 
-              <CardHeader className="pb-4 relative -mt-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
+              <CardContent className="p-6 space-y-4 relative">
+                {/* Title & Description */}
+                <div>
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent group-hover:from-purple-700 group-hover:to-pink-700 transition-all">
+                      {room.title}
+                    </h3>
                    
-                    <div>
-                      <CardTitle className="text-lg group-hover:text-primary transition-colors">
-                        {room.title}
-                      </CardTitle>
-                      <CardDescription className="text-sm">
-                        {room.description}
-                      </CardDescription>
-                    </div>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>View Details</DropdownMenuItem>
-                      <DropdownMenuItem>Share Invite</DropdownMenuItem>
-                      <DropdownMenuItem>Room Settings</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-1 text-muted-foreground">
-                    <Users className="h-4 w-4" />
-                    {room.membersCount} members
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    {room.category}
-                  </Badge>
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {room.description}
+                  </p>
                 </div>
 
-                <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Total Expenses</span>
-                    <span className="font-semibold">₹{room.totalExpenses.toLocaleString()}</span>
+                {/* Stats */}
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
+                      <Users className="h-4 w-4 text-purple-600" />
+                    </div>
+                    <span className="font-medium">{room.membersCount}</span>
                   </div>
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <div className="h-8 w-8 rounded-full bg-pink-100 dark:bg-pink-900/20 flex items-center justify-center">
+                      <DollarSign className="h-4 w-4 text-pink-600" />
+                    </div>
+                    <span className="font-medium">₹{room.totalExpenses.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Expense Card */}
+                <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 rounded-2xl p-4 space-y-3 border border-purple-100 dark:border-purple-900/30">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Your Balance</span>
-                    <span className="font-semibold text-green-600">
-                      ₹0 {/* Placeholder - calculate actual balance */}
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Spent</span>
+                    <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      ₹{room.totalExpenses.toLocaleString()}
                     </span>
                   </div>
+                  <div className="h-2 bg-white/50 dark:bg-black/20 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min((room.totalExpenses / 10000) * 100, 100)}%` }}
+                    />
+                  </div>
                 </div>
 
+                {/* Action Buttons */}
                 <div className="flex gap-2 pt-2">
-                  <Button size="sm" variant="outline" className="flex-1 rounded-xl" onClick={() => handleViewDetails(room.id)}>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="flex-1 rounded-xl border-purple-200 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 dark:border-purple-800 dark:hover:bg-purple-950/30 transition-all"
+                    onClick={() => handleViewDetails(room.id)}
+                  >
                     View Details
                   </Button>
-                  <Button size="sm" className="flex-1 rounded-xl">
-                    Add Expense
-                  </Button>
+                 
                 </div>
 
-                {/* Join Code Section */}
-                <div className="pt-3 border-t border-border">
+                {/* Join Code Footer */}
+                <div className="pt-4 border-t border-purple-100 dark:border-purple-900/30">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Join Code:</span>
+                    <span className="text-xs text-muted-foreground font-medium">Invite Code</span>
                     <div className="flex items-center gap-2">
-                      <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                      <code className="text-sm font-mono bg-white dark:bg-black/20 px-3 py-1.5 rounded-lg border border-purple-100 dark:border-purple-900/30 font-semibold text-purple-700 dark:text-purple-300">
                         {room.joinCode}
                       </code>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => copyToClipboard(room.joinCode)}
-                        className="h-6 w-6 p-0"
+                        className="h-8 w-8 p-0 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/20"
                       >
                         {copiedCode === room.joinCode ? (
                           <CheckCircle className="h-4 w-4 text-green-600" />
                         ) : (
-                          <Copy className="h-4 w-4" />
+                          <Copy className="h-4 w-4 text-purple-600" />
                         )}
                       </Button>
                     </div>
@@ -572,23 +584,62 @@ export default function RoomsPage() {
 
         {/* Create Room Card */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: rooms.length * 0.1 }}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: rooms.length * 0.1, type: "spring" }}
+          whileHover={{ y: -8, scale: 1.02 }}
+          className="group"
         >
-          <Card className="border-dashed border-2 hover:border-primary transition-colors cursor-pointer h-full min-h-[280px] flex items-center justify-center">
-            <div className="text-center p-6">
-              <div className="h-12 w-12 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Plus className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="font-semibold mb-2">Create New Room</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Start a new expense group with friends or family
-              </p>
-              <Button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="rounded-xl"
+          <Card 
+            className="relative overflow-hidden border-2 border-dashed border-purple-300 dark:border-purple-700 hover:border-purple-500 dark:hover:border-purple-500 transition-all duration-300 h-full min-h-[400px] flex items-center justify-center bg-gradient-to-br from-purple-50/50 via-pink-50/50 to-blue-50/50 dark:from-purple-950/10 dark:via-pink-950/10 dark:to-blue-950/10 cursor-pointer"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            {/* Animated Background Pattern */}
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzhCNUNGNiIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50" />
+            
+            <div className="text-center p-8 relative z-10">
+              {/* Icon with Gradient Background */}
+              <motion.div 
+                className="relative mx-auto mb-6"
+                whileHover={{ rotate: 180 }}
+                transition={{ duration: 0.5 }}
               >
+                <div className="h-20 w-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-purple-500/30 group-hover:shadow-xl group-hover:shadow-purple-500/40 transition-all">
+                  <Plus className="h-10 w-10 text-white" />
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-3xl blur-xl opacity-30 group-hover:opacity-50 transition-opacity" />
+              </motion.div>
+
+              {/* Text Content */}
+              <h3 className="text-2xl font-bold mb-3 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                Create New Room
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-xs mx-auto">
+                Start a new expense group and invite friends or family to split costs together
+              </p>
+
+              {/* Features List */}
+              <div className="space-y-2 mb-6 text-left max-w-xs mx-auto">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+                  <span>Track shared expenses</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="h-1.5 w-1.5 rounded-full bg-pink-500" />
+                  <span>Split bills automatically</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  <span>Invite unlimited members</span>
+                </div>
+              </div>
+
+              {/* Button */}
+              <Button
+                className="rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/40 transition-all px-8"
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
                 Get Started
               </Button>
             </div>
