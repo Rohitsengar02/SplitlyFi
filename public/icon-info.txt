@@ -1,0 +1,26 @@
+IMPORTANT: Add Your App Icons
+
+You need to add the following icon files to the /public folder:
+
+1. icon-192x192.png (192x192 pixels)
+   - This is the standard app icon for Android
+   
+2. icon-512x512.png (512x512 pixels)
+   - This is the high-resolution app icon
+   
+3. favicon.ico (optional but recommended)
+   - Browser tab icon
+
+How to create icons:
+1. Use a tool like https://realfavicongenerator.net/
+2. Upload your logo/icon (square, at least 512x512px)
+3. Generate all required sizes
+4. Download and place in /public folder
+
+Recommended icon design:
+- Simple, recognizable logo
+- Good contrast
+- Works well at small sizes
+- Purple/Pink gradient to match your app theme (#8B5CF6)
+
+Until you add real icons, the app will still be installable but may show a default icon.
