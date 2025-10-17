@@ -1,5 +1,6 @@
 import { BottomNav } from '@/components/navigation/bottom-nav';
 import { Sidebar } from '@/components/navigation/sidebar';
+import { FloatingActionButton } from '@/components/floating-action-button';
 
 export default function DashboardLayout({
   children,
@@ -13,6 +14,7 @@ export default function DashboardLayout({
         {children}
       </main>
       <BottomNav />
+      <FloatingActionButton />
     </div>
   );
 }

@@ -191,11 +191,12 @@ export default function AddExpensePage() {
         addedBy: user.uid,
         addedByName: user.displayName || 'User',
         addedByEmail: user.email,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
 
-      await addDoc(collection(db, 'allexpenses'), expenseData);
+      // Save to users/{uid}/personalexpence subcollection
+      await addDoc(collection(db, 'users', user.uid, 'personalexpence'), expenseData);
 
       // Reset form
       setPersonalTitle('');

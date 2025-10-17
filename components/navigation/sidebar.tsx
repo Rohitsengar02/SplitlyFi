@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Chrome as Home, Users, Plus, Target, User, Settings, Menu, X, DollarSign, LogOut } from 'lucide-react';
+import { Chrome as Home, Users, Plus, Target, User, Settings, Menu, X, DollarSign, LogOut, Receipt } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import { useAuth } from '@/components/auth-provider';
 const navItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
   { icon: Users, label: 'Rooms', href: '/rooms' },
+  { icon: Receipt, label: 'My Expenses', href: '/expenses' },
   { icon: Plus, label: 'Add Expense', href: '/add-expense' },
   { icon: Target, label: 'Goals', href: '/goals' },
   { icon: User, label: 'Profile', href: '/profile' },

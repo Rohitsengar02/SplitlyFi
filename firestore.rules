@@ -58,6 +58,30 @@ service cloud.firestore {
       allow create: if isValidCreate();
       allow update: if true;
       allow delete: if isOwner();
+
+      // User's personal goals subcollection
+      match /goals/{goalId} {
+        function isOwner() {
+          return request.auth != null && request.auth.uid == userId;
+        }
+
+        allow read: if isOwner();
+        allow create: if isOwner() && request.resource.data.userId == userId;
+        allow update: if isOwner();
+        allow delete: if isOwner();
+      }
+
+      // User's personal expenses subcollection
+      match /personalexpence/{expenseId} {
+        function isOwner() {
+          return request.auth != null && request.auth.uid == userId;
+        }
+
+        allow read: if isOwner();
+        allow create: if isOwner();
+        allow update: if isOwner();
+        allow delete: if isOwner();
+      }
     }
 
     // ===================================================

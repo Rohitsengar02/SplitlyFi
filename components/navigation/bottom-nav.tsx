@@ -1,6 +1,6 @@
 'use client';
 
-import { Chrome as Home, Users, Plus, Target, User } from 'lucide-react';
+import { Chrome as Home, Users, Plus, Target, User, Receipt } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { icon: Home, label: 'Home', href: '/dashboard' },
   { icon: Users, label: 'Rooms', href: '/rooms' },
-  { icon: Plus, label: 'Add', href: '/add-expense' },
+  { icon: Receipt, label: 'Expenses', href: '/expenses' },
   { icon: Target, label: 'Goals', href: '/goals' },
   { icon: User, label: 'Profile', href: '/profile' },
 ];

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Target, TrendingUp, Calendar, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,63 +11,38 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { db } from '@/lib/firebase';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, increment, orderBy } from 'firebase/firestore';
+import { useAuth } from '@/components/auth-provider';
 
-const goals = [
-  {
-    id: 1,
-    name: 'Vacation Fund',
-    target: 50000,
-    saved: 39000,
-    dueDate: '2025-08-15',
-    type: 'personal',
-    category: 'Travel',
-    contributors: ['You'],
-  },
-  {
-    id: 2,
-    name: 'Emergency Fund',
-    target: 100000,
-    saved: 45000,
-    dueDate: '2025-12-31',
-    type: 'personal',
-    category: 'Savings',
-    contributors: ['You'],
-  },
-  {
-    id: 3,
-    name: 'New Laptop',
-    target: 70000,
-    saved: 64400,
-    dueDate: '2025-07-01',
-    type: 'personal',
-    category: 'Electronics',
-    contributors: ['You'],
-  },
-  {
-    id: 4,
-    name: 'Family Trip to Europe',
-    target: 200000,
-    saved: 85000,
-    dueDate: '2025-10-15',
-    type: 'shared',
-    category: 'Travel',
-    contributors: ['You', 'Sarah', 'Dad', 'Mom'],
-  },
-  {
-    id: 5,
-    name: 'Home Renovation',
-    target: 150000,
-    saved: 32000,
-    dueDate: '2025-09-30',
-    type: 'shared',
-    category: 'Home',
-    contributors: ['You', 'Partner'],
-  },
-];
+interface Goal {
+  id: string;
+  name: string;
+  target: number;
+  saved: number;
+  dueDate: string;
+  type: 'personal' | 'shared';
+  category: string;
+  userId: string;
+  createdAt: string;
+}
 
 export default function GoalsPage() {
+  const { user } = useAuth();
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAddMoneyOpen, setIsAddMoneyOpen] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [filter, setFilter] = useState<'all' | 'personal' | 'shared'>('all');
+  
+  // Form states
+  const [goalName, setGoalName] = useState('');
+  const [targetAmount, setTargetAmount] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [goalType, setGoalType] = useState<'personal' | 'shared'>('personal');
+  const [category, setCategory] = useState('');
+  const [addAmount, setAddAmount] = useState('');
 
   const filteredGoals = goals.filter(goal => 
     filter === 'all' || goal.type === filter
@@ -88,6 +63,86 @@ export default function GoalsPage() {
     const diffTime = dueDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
+  };
+
+  // Fetch user's personal goals from users/{uid}/goals
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const goalsQuery = query(
+      collection(db, 'users', user.uid, 'goals'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(goalsQuery, (snapshot) => {
+      const fetchedGoals: Goal[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Goal));
+      setGoals(fetchedGoals);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Create new goal
+  const handleCreateGoal = async () => {
+    if (!user || !goalName || !targetAmount || !dueDate || !category) return;
+
+    try {
+      // Save goal under users/{uid}/goals subcollection
+      await addDoc(collection(db, 'users', user.uid, 'goals'), {
+        name: goalName,
+        target: parseFloat(targetAmount),
+        saved: 0,
+        dueDate,
+        type: goalType,
+        category,
+        userId: user.uid,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Reset form
+      setGoalName('');
+      setTargetAmount('');
+      setDueDate('');
+      setCategory('');
+      setGoalType('personal');
+      setIsCreateModalOpen(false);
+    } catch (error) {
+      console.error('Error creating goal:', error);
+    }
+  };
+
+  // Add money to goal
+  const handleAddMoney = async () => {
+    if (!selectedGoal || !addAmount || !user) return;
+
+    const amount = parseFloat(addAmount);
+    if (isNaN(amount) || amount <= 0) return;
+
+    try {
+      // Update goal in users/{uid}/goals subcollection
+      const goalRef = doc(db, 'users', user.uid, 'goals', selectedGoal.id);
+      await updateDoc(goalRef, {
+        saved: increment(amount)
+      });
+
+      setAddAmount('');
+      setSelectedGoal(null);
+      setIsAddMoneyOpen(false);
+    } catch (error) {
+      console.error('Error adding money:', error);
+    }
+  };
+
+  const openAddMoneyDialog = (goal: Goal) => {
+    setSelectedGoal(goal);
+    setIsAddMoneyOpen(true);
   };
 
   return (
@@ -123,7 +178,26 @@ export default function GoalsPage() {
                   id="goalName"
                   placeholder="e.g., Dream Vacation"
                   className="rounded-xl mt-1"
+                  value={goalName}
+                  onChange={(e) => setGoalName(e.target.value)}
                 />
+              </div>
+              <div>
+                <Label htmlFor="category">Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger className="rounded-xl mt-1">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Travel">Travel</SelectItem>
+                    <SelectItem value="Savings">Savings</SelectItem>
+                    <SelectItem value="Electronics">Electronics</SelectItem>
+                    <SelectItem value="Home">Home</SelectItem>
+                    <SelectItem value="Education">Education</SelectItem>
+                    <SelectItem value="Health">Health</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="targetAmount">Target Amount (₹)</Label>
@@ -132,6 +206,8 @@ export default function GoalsPage() {
                   type="number"
                   placeholder="50000"
                   className="rounded-xl mt-1"
+                  value={targetAmount}
+                  onChange={(e) => setTargetAmount(e.target.value)}
                 />
               </div>
               <div>
@@ -140,11 +216,13 @@ export default function GoalsPage() {
                   id="dueDate"
                   type="date"
                   className="rounded-xl mt-1"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
                 />
               </div>
               <div>
                 <Label htmlFor="goalType">Goal Type</Label>
-                <Select>
+                <Select value={goalType} onValueChange={(value: 'personal' | 'shared') => setGoalType(value)}>
                   <SelectTrigger className="rounded-xl mt-1">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -163,8 +241,9 @@ export default function GoalsPage() {
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => setIsCreateModalOpen(false)}
+                  onClick={handleCreateGoal}
                   className="flex-1 rounded-xl"
+                  disabled={!goalName || !targetAmount || !dueDate || !category}
                 >
                   Create Goal
                 </Button>
@@ -258,20 +337,6 @@ export default function GoalsPage() {
                     </div>
                   </div>
 
-                  {/* Contributors */}
-                  {goal.type === 'shared' && (
-                    <div>
-                      <p className="text-sm font-medium mb-2">Contributors</p>
-                      <div className="flex flex-wrap gap-2">
-                        {goal.contributors.map((contributor) => (
-                          <Badge key={contributor} variant="outline" className="text-xs">
-                            {contributor}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Amount Remaining */}
                   <div className="bg-muted/50 rounded-2xl p-4">
                     <div className="flex justify-between items-center">
@@ -284,10 +349,12 @@ export default function GoalsPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="flex-1 rounded-xl">
-                      View Details
-                    </Button>
-                    <Button size="sm" className="flex-1 rounded-xl">
+                    <Button 
+                      size="sm" 
+                      className="flex-1 rounded-xl"
+                      onClick={() => openAddMoneyDialog(goal)}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
                       Add Money
                     </Button>
                   </div>
@@ -299,7 +366,7 @@ export default function GoalsPage() {
       </div>
 
       {/* Empty State */}
-      {filteredGoals.length === 0 && (
+      {filteredGoals.length === 0 && !loading && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -323,6 +390,57 @@ export default function GoalsPage() {
           )}
         </motion.div>
       )}
+
+      {/* Add Money Dialog */}
+      <Dialog open={isAddMoneyOpen} onOpenChange={setIsAddMoneyOpen}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Add Money to Goal</DialogTitle>
+            <DialogDescription>
+              Add money to "{selectedGoal?.name}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Current Progress</span>
+                <span className="font-semibold">
+                  ₹{selectedGoal?.saved.toLocaleString()} / ₹{selectedGoal?.target.toLocaleString()}
+                </span>
+              </div>
+              <Progress 
+                value={selectedGoal ? (selectedGoal.saved / selectedGoal.target) * 100 : 0} 
+                className="h-2" 
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{selectedGoal ? Math.round((selectedGoal.saved / selectedGoal.target) * 100) : 0}% Complete</span>
+                <span>₹{selectedGoal ? (selectedGoal.target - selectedGoal.saved).toLocaleString() : 0} remaining</span>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="addAmount">Amount to Add (₹)</Label>
+              <Input
+                id="addAmount"
+                type="number"
+                placeholder="Enter amount"
+                value={addAmount}
+                onChange={(e) => setAddAmount(e.target.value)}
+                className="rounded-xl"
+                min="1"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setIsAddMoneyOpen(false)} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button onClick={handleAddMoney} disabled={!addAmount || parseFloat(addAmount) <= 0} className="rounded-xl">
+              Add Money
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
